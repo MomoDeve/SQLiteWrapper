@@ -58,7 +58,7 @@ bool momo::SQLite3::execute(const std::string& SQL)
 bool momo::SQLite3::execute(const std::string& SQL, SQLite3_callback function, void* callbackArg)
 {
 	char* error;
-	_success = true;
+	_success = true; 
 	if (sqlite3_exec(_database, SQL.c_str(), function, callbackArg, &error))
 	{
 		_errorMessage = std::string(error);
