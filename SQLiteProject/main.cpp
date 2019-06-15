@@ -1,6 +1,6 @@
 #include <iostream>
 #include "SQLite.h"
-
+ 
 static int callback(void *data, int argc, char **argv, char **azColName)
 {
 	int i;
