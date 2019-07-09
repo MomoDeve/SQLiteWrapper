@@ -1,5 +1,6 @@
 # SQLiteWrapper
 c++ wrapper for SQLite
+
 Currently supporting:
 - CREATE
 - INSERT
@@ -7,3 +8,9 @@ Currently supporting:
 - ALTER
 - DELETE
 - DROP
+
+Still working on:
+- HAVING
+- INNER/OUTER JOIN
+- LIMIT
+- UPDATE
