@@ -103,7 +103,9 @@ namespace momo
 		SELECT,
 		INSERT,
 		CREATE,
-		DROP
+		DROP,
+		ALTER,
+		DELETE,
 	};
 
 	/*
@@ -117,6 +119,7 @@ namespace momo
 		REAL,
 		BLOB,
 	};
+	const char* convertType(TYPE type);
 
 	/*
 	enum of predefined Booleans which can be passed to addColumn function in SQLBuilder<CREATE> class
@@ -150,8 +153,6 @@ namespace momo
 	template<>
 	class SQLBuilder<OPERATION::CREATE>
 	{
-		static const char* convertType(TYPE type);
-
 		std::vector<std::string> _columns;
 	public:
 		/*
@@ -316,11 +317,87 @@ namespace momo
 	{
 		std::string _tableName;
 	public:
-		SQLBuilder(std::string tableName)
-			: _tableName(std::move(tableName))
-		{
-			
-		}
+		/*
+		initialize SQLBuilder object with table names
+		*/
+		SQLBuilder(std::string tableName);
+
+		/*
+		converts SQLBuilder object to SQL
+		can be passed to execute method of database: execute(sqlBuilder)
+		*/
+		operator std::string() const;
+	};
+
+	/*
+	SQLBuilder class for altering and tables
+	*/
+	template<>
+	class SQLBuilder<OPERATION::ALTER>
+	{
+		std::string _tableName;
+		std::string _newName;
+		std::vector<std::string> _newColumns;
+		std::vector<std::pair<std::string, std::string> > _renamedColumns;
+	public: 
+		/*
+		initialize SQLBuilder with table name
+		*/
+		SQLBuilder(std::string tableName);
+
+		/*
+		renames table using new name provided
+		*/
+		SQLBuilder<OPERATION::ALTER>& rename(const std::string newName);
+
+		/*
+		adds columns to the database. 
+		example: SQLBuilder.addColumn("NAME", TYPE::TEXT, NOT_NULL);
+		will produce: {database} ADD NAME TEXT NOT NULL;
+		*/
+		SQLBuilder<OPERATION::ALTER>& addColumn(const std::string& name, TYPE type, bool isNull = IS_NULL);
+
+		/*
+		adds columns to the database.
+		example: SQLBuilder.addColumn("NAME", "TEXT", NOT_NULL);
+		will produce: {database} ADD NAME TEXT NOT NULL;
+		*/
+		SQLBuilder<OPERATION::ALTER>& addColumn(const std::string & name, const std::string& type, bool isNull = IS_NULL);
+
+		/*
+		renames column in the database
+		example: SQLBuilder.renameColumn("NAME", "SURNAME");
+		will produce: {database} RENAME COLUMN NAME to SURNAME;
+		*/
+		SQLBuilder<OPERATION::ALTER>& renameColumn(const std::string& columnName, const std::string& newColumnName);
+
+		/*
+		executes SQLBuilder commands. 
+		SQLbuilder<ALTER> creates multiple commands to DB, so no std::string operator provided
+		*/
+		friend SQLite3& operator<<(SQLite3& database, const SQLBuilder<OPERATION::ALTER>& sql);
+	};
+
+	template<>
+	class SQLBuilder<OPERATION::DELETE>
+	{
+		std::string _tableName;
+		std::string _whereExpression;
+	public:
+		/*
+		initialize SQLBuilder object with table name
+		*/
+		SQLBuilder(std::string tableName);
+		
+		/*
+		adds WHERE expression to the delete statement.
+		This method can be called multiple times and expressions will be concatenated with `AND`
+		example: sqlBuilder.where("ID < 1000").where("NAME = 'Alex'");
+		will produce: WHERE (ID < 1000) AND (NAME = 'Alex')
+		*/
+		SQLBuilder<OPERATION::DELETE>& where(const std::string& whereExpression);
+
+		operator std::string() const;
 	};
 
 	SQLite3& operator<<(SQLite3& database, const SQLBuilder<OPERATION::SELECT>& sql);

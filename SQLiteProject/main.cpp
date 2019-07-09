@@ -49,15 +49,34 @@ int main()
 	{
 		std::cout << database.getErrorMessage() << std::endl;
 	}
+	SQLBuilder<OPERATION::SELECT> select(sqlCreate.tableName);
+
+	//sqlCreate.tableName = "MY_DB";
+	SQLBuilder<OPERATION::ALTER> sqlAlter(sqlCreate.tableName);
+	sqlAlter
+		.renameColumn("SALARY", "MONTH_PAYOFF")
+		.renameColumn("ADDRESS", "HOME");
+
+	database << sqlAlter;
+	if (!database.success())
+	{
+		std::cout << database.getErrorMessage() << std::endl;
+	}
+
+	SQLBuilder<OPERATION::DELETE> sqlDelete(sqlCreate.tableName);
+	sqlDelete.where("ID < 2").where("MONTH_PAYOFF < 20000");
+	database << sqlDelete;
+
 	SQLBuilder<OPERATION::SELECT> sqlSelect(sqlCreate.tableName);
 	sqlSelect.callback = callback;
-	sqlSelect.where("SALARY < 30000").orderBy("AGE");
 
 	database << sqlSelect;
 	if (!database.success())
 	{
 		std::cout << database.getErrorMessage() << std::endl;
 	}
+	SQLBuilder<OPERATION::DROP> sqlDrop(sqlCreate.tableName);
+	database.execute(sqlDrop);
 	database.close();
 	system("pause");
 	return 0;

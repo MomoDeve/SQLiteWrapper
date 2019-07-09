@@ -87,7 +87,7 @@ momo::SQLite3::~SQLite3()
 	close();
 }
 
-const char* momo::SQLBuilder<momo::OPERATION::CREATE>::convertType(momo::TYPE type)
+const char* momo::convertType(momo::TYPE type)
 {
 	switch (type)
 	{
@@ -117,13 +117,45 @@ momo::SQLBuilder<momo::OPERATION::CREATE>::SQLBuilder(std::string tableName)
 
 }
 
+momo::SQLBuilder<momo::OPERATION::ALTER>& momo::SQLBuilder<momo::OPERATION::ALTER>::rename(const std::string newName)
+{
+	_newName = newName;
+	return *this;
+}
+
+momo::SQLBuilder<momo::OPERATION::ALTER>& momo::SQLBuilder<momo::OPERATION::ALTER>::addColumn(const std::string& name, TYPE type, bool isNull)
+{
+	addColumn(name, convertType(type), isNull);
+	return *this;
+}
+
+momo::SQLBuilder<momo::OPERATION::ALTER>& momo::SQLBuilder<momo::OPERATION::ALTER>::addColumn(const std::string& name, const std::string& type, bool isNull)
+{
+	const char* IsNULL = (isNull == NULL ? " NULL" : " NOT NULL");
+	std::string column = name + ' ' + type + IsNULL;
+	_newColumns.push_back(std::move(column));
+	return *this;
+}
+
+momo::SQLBuilder<momo::OPERATION::ALTER>& momo::SQLBuilder<momo::OPERATION::ALTER>::renameColumn(const std::string& columnName, const std::string& newColumnName)
+{
+	_renamedColumns.push_back({ columnName, newColumnName });
+	return *this;
+}
+
+momo::SQLBuilder<momo::OPERATION::ALTER>::SQLBuilder(std::string tableName)
+	: _tableName(std::move(tableName))
+{
+
+}
+
 momo::SQLBuilder<momo::OPERATION::CREATE>& momo::SQLBuilder<momo::OPERATION::CREATE>::addColumn(const std::string& name, TYPE type, bool isNull, bool isPrimaryKey)
 {
 	addColumn(name, convertType(type), isNull, isPrimaryKey);
 	return *this;
 }
 
-momo::SQLBuilder<momo::OPERATION::CREATE>& momo::SQLBuilder<momo::OPERATION::CREATE>::addColumn(const std::string & name, const std::string & type, bool isNull, bool isPrimaryKey)
+momo::SQLBuilder<momo::OPERATION::CREATE>& momo::SQLBuilder<momo::OPERATION::CREATE>::addColumn(const std::string& name, const std::string& type, bool isNull, bool isPrimaryKey)
 {
 	const char* IsNULL = (isNull == NULL ? " NULL" : " NOT NULL");
 	const char* IsKEY = (isPrimaryKey == momo::PRIMARY_KEY ? " PRIMARY KEY" : "");
@@ -148,6 +180,35 @@ momo::SQLBuilder<momo::OPERATION::CREATE>::operator std::string() const
 	}
 	SQL << ");";
 	return SQL.str();
+}
+
+momo::SQLBuilder<momo::OPERATION::DELETE>::operator std::string() const
+{
+	std::stringstream SQL;
+	SQL << "DELETE FROM " << _tableName << " WHERE " << _whereExpression << ';';
+	return SQL.str();
+}
+
+momo::SQLite3& momo::operator<<(SQLite3& database, const SQLBuilder<OPERATION::ALTER>& sql)
+{
+	std::string alterString = "ALTER TABLE " + sql._tableName;
+	if (!sql._newName.empty())
+	{
+		if (!database.execute(alterString + " RENAME TO " + sql._newName + ';'))
+			return database;
+	}
+
+	for (const auto& column : sql._newColumns)
+	{
+		if (!database.execute(alterString + " ADD " + column + ';'))
+			return database;
+	}
+	for (const auto& columnPair : sql._renamedColumns)
+	{
+		if(!database.execute(alterString + " RENAME COLUMN " + columnPair.first + " TO " + columnPair.second + ';'))
+			return database;
+	}
+	return database;
 }
 
 momo::SQLBuilder<momo::OPERATION::INSERT>::SQLBuilder(const std::string& tableName, const std::string& values)
@@ -202,7 +263,7 @@ momo::SQLBuilder<momo::OPERATION::SELECT>& momo::SQLBuilder<momo::OPERATION::SEL
 momo::SQLBuilder<momo::OPERATION::SELECT>& momo::SQLBuilder<momo::OPERATION::SELECT>::where(const std::string& whereExpression)
 {
 	if (!_whereExpression.empty()) _whereExpression += "AND";
-	_whereExpression = '(' + whereExpression + ')';
+	_whereExpression += '(' + whereExpression + ')';
 	return *this;
 }
 
@@ -221,6 +282,32 @@ momo::SQLBuilder<momo::OPERATION::SELECT>::operator std::string() const
 	if (!_whereExpression.empty()) SQL << " WHERE " << _whereExpression;
 	if (!_orderExpression.empty()) SQL << " ORDER BY " << _orderExpression;
 	SQL << ';';
+	return SQL.str();
+}
+
+momo::SQLBuilder<momo::OPERATION::DROP>::SQLBuilder(std::string tableName)
+	: _tableName(std::move(tableName))
+{
+
+}
+
+momo::SQLBuilder<momo::OPERATION::DELETE>::SQLBuilder(std::string tableName)
+	: _tableName(std::move(tableName))
+{
+
+}
+
+momo::SQLBuilder<momo::OPERATION::DELETE>& momo::SQLBuilder<momo::OPERATION::DELETE>::where(const std::string& whereExpression)
+{
+	if (!_whereExpression.empty()) _whereExpression += "AND";
+	_whereExpression += '(' + whereExpression + ')';
+	return *this;
+}
+
+momo::SQLBuilder<momo::OPERATION::DROP>::operator std::string() const
+{
+	std::stringstream SQL;
+	SQL << "DROP TABLE " << _tableName << ';';
 	return SQL.str();
 }
 
