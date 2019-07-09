@@ -1,6 +1,6 @@
 #include <iostream>
 #include "SQLite.h"
- 
+
 static int callback(void *data, int argc, char **argv, char **azColName)
 {
 	int i;
@@ -20,13 +20,14 @@ int main()
 {
 	SQLite3 database;
 	database.open("sampleSQLiteDB.dblite");
-
-	SQLBuilder<Operation::CREATE> sqlCreate("COMPANY");
-	sqlCreate.addColumn("ID", INT, NOT_NULL, PRIMARY_KEY);
-	sqlCreate.addColumn("NAME", TEXT, NOT_NULL);
-	sqlCreate.addColumn("AGE", INT, NOT_NULL);
-	sqlCreate.addColumn("ADDRESS", TEXT);
-	sqlCreate.addColumn("SALARY", REAL);
+	 
+	SQLBuilder<OPERATION::CREATE> sqlCreate("COMPANY");
+	sqlCreate
+		.addColumn("ID", INT, NOT_NULL, PRIMARY_KEY)
+		.addColumn("NAME", TEXT, NOT_NULL)
+		.addColumn("AGE", INT, NOT_NULL)
+		.addColumn("ADDRESS", "VARCHAR(10)")
+		.addColumn("SALARY", REAL);
 
 	database << sqlCreate;
 	if (!database.success())
@@ -34,25 +35,29 @@ int main()
 		std::cout << "error while creating table: " << database.getErrorMessage() << std::endl;
 	}
 
-	SQLBuilder<Operation::INSERT> sqlInsert(sqlCreate.tableName, "ID, NAME, AGE, ADDRESS, SALARY");
-	sqlInsert.addValues(pack(2, "Allen", 25, "Texas", 15000.00));
-	sqlInsert.addValues(pack(3, "Teddy", 23, "Norway", 20000.0));
-	sqlInsert.addValues(pack(4, "Mark", 25, "Rich-Mond", 65000.00));
-	sqlInsert.addValues(pack(1, "Paul", 32, "Califonia", 20000.0));
-	sqlInsert.addValues(pack(5, "Alex", 16, "Moscow", 10000.00));
+	SQLBuilder<OPERATION::INSERT> sqlInsert(sqlCreate.tableName, "ID, NAME, AGE, ADDRESS, SALARY");
+	sqlInsert
+		.addValues(pack(0, "Allen", 25, "Texas", 15000.00))
+		.addValues(pack(1, "Teddy", 23, "Norway", 20000.0))
+		.addValues(pack(2, "Mark", 25, "Rich-Mond", 65000.00))
+		.addValues(pack(3, "Paul", 32, "Califonia", 20000.0))
+		.addValues(pack(4, "Alex", 16, "Moscow", 10000.00))
+		.addValues(pack(5, "Harry", 25, "Boston", 40000));
 
 	database << sqlInsert;
 	if (!database.success())
 	{
 		std::cout << database.getErrorMessage() << std::endl;
 	}
+	SQLBuilder<OPERATION::SELECT> sqlSelect(sqlCreate.tableName);
+	sqlSelect.callback = callback;
+	sqlSelect.where("SALARY < 30000").orderBy("AGE");
 
-	const char* sqlSelect = "SELECT * from COMPANY";
-	if (!database.execute(sqlSelect, callback, 0))
+	database << sqlSelect;
+	if (!database.success())
 	{
 		std::cout << database.getErrorMessage() << std::endl;
 	}
-
 	database.close();
 	system("pause");
 	return 0;

@@ -1,14 +1,16 @@
-#pragma once 
+#pragma once
 
 #include "sqlite3.h"
 #include <string>
 #include <vector>
 #include <sstream>
 #include <typeinfo>
+#include <ostream>
 
 namespace momo
 {
-	typedef int(*SQLite3_callback)(void*, int, char**, char**);
+	typedef int(*sqlite3_callback)(void*, int, char**, char**);
+	typedef void* callback_arg;
 
 	class SQLite3
 	{
@@ -33,9 +35,9 @@ namespace momo
 		*/
 		SQLite3(sqlite3* _database, const std::string& name);
 
-		/* 
+		/*
 		creating a new database using name provided
-	    example: SQLite3 db("myDB.dblite");
+		example: SQLite3 db("myDB.dblite");
 		*/
 		SQLite3(const std::string& name);
 
@@ -55,7 +57,7 @@ namespace momo
 		*/
 		const std::string& getErrorMessage() const;
 
-		/* 
+		/*
 		open/create new db using name provided
 		if another db was already opened, it will be closed before
 		returns true on success, false on failure
@@ -74,7 +76,7 @@ namespace momo
 		if an error accurs, it can be got using getErrorMessage() method
 		returns true on success, false on failure
 		*/
-		bool execute(const std::string& SQL, SQLite3_callback function, void* callbackArg);
+		bool execute(const std::string& SQL, sqlite3_callback function, callback_arg arg);
 
 		/*
 		execute an SQL command (as string) passed usign << operator
@@ -96,23 +98,24 @@ namespace momo
 	/*
 	enum of all operations which can be passes as template parameter to SQLBuilder<>
 	*/
-	enum Operation
+	enum OPERATION
 	{
 		SELECT,
 		INSERT,
-		CREATE
+		CREATE,
+		DROP
 	};
 
 	/*
 	enum of all types which can be passed to addColumn function in SQLBuilder<CREATE> class
 	*/
-	enum Type
+	enum TYPE
 	{
 		INT,
 		TEXT,
 		NUMERIC,
 		REAL,
-		BLOB
+		BLOB,
 	};
 
 	/*
@@ -123,25 +126,37 @@ namespace momo
 		IS_NULL = 0,
 		NOT_NULL = 1,
 		PRIMARY_KEY = 1,
-		NOT_PRIMARY_KEY = 0
+		NOT_PRIMARY_KEY = 0,
+	};
+
+	/*
+	enum of order constants which can be passed to order() function
+	*/
+	enum ORDER
+	{
+		ASC,
+		DESC
 	};
 
 	/*
 	unspecialized template of SQLBuilder
 	*/
-	template<Operation op>
+	template<OPERATION op>
 	class SQLBuilder { };
 	
 	/*
 	SQLBuilder class for creating tables in the database
 	*/
 	template<>
-	class SQLBuilder<Operation::CREATE>
+	class SQLBuilder<OPERATION::CREATE>
 	{
-		static const char* convertType(Type type);
+		static const char* convertType(TYPE type);
 
 		std::vector<std::string> _columns;
 	public:
+		/*
+		name of table in the database
+		*/
 		std::string tableName;
 
 		/*
@@ -162,7 +177,16 @@ namespace momo
 		addColumn("NAME", Type::TEXT, NOT_NULL, PRIMARY_KEY) produces
 				  "NAME TEXT NOT NULL PRIMARY KEY"
 		*/
-		void addColumn(const std::string& name, Type type, bool isNull = IS_NULL, bool isPrimaryKey = NOT_PRIMARY_KEY);
+		SQLBuilder<OPERATION::CREATE>& addColumn(const std::string& name, TYPE type, bool isNull = IS_NULL, bool isPrimaryKey = NOT_PRIMARY_KEY);
+
+		/*
+		adds column to the table
+
+		example:
+		addColumn("NAME", "TEXT", NOT_NULL, PRIMARY_KEY) produces
+				  "NAME TEXT NOT NULL PRIMARY KEY"
+		*/
+		SQLBuilder<OPERATION::CREATE>& addColumn(const std::string& name, const std::string& type, bool isNull = IS_NULL, bool isPrimaryKey = NOT_PRIMARY_KEY);
 
 		/*
 		adds column to the table using default SQL
@@ -170,7 +194,7 @@ namespace momo
 		example:
 		SQLBuilder << "NAME TEXT NOT NULL PRIMARY KEY";
 		*/
-		SQLBuilder<Operation::CREATE>& operator<<(std::string column);
+		SQLBuilder<OPERATION::CREATE>& operator<<(std::string column);
 
 		/*
 		converts SQLBuilder object to SQL 
@@ -183,14 +207,14 @@ namespace momo
 	SQLBuilder class for inserting values in the database
 	*/
 	template<>
-	class SQLBuilder<Operation::INSERT>
+	class SQLBuilder<OPERATION::INSERT>
 	{
 		std::string _insertionLine;
 		std::vector<std::string> _values;
 	public:
 		/*
 		values will be inserted into table with name passed into constructor
-		VALUES(...) are set using values parameter
+		VALUES(...) are set using `values` variable
 		
 		example:
 		SQLBuilder builer("MYTABLE", "ID, NAME, AGE");
@@ -207,7 +231,7 @@ namespace momo
 
 		hint: use pack(args...) to create a single line from multiple parameters
 		*/
-		void addValues(std::string values);
+		SQLBuilder<OPERATION::INSERT>& addValues(std::string values);
 
 		/*
 		converts SQLBuilder object to SQL
@@ -215,6 +239,91 @@ namespace momo
 		*/
 		operator std::string() const;
 	};
+
+	/*
+	SQLBuilder class for selecting values from the database
+	*/
+	template<>
+	class SQLBuilder<OPERATION::SELECT>
+	{
+		std::string _columns;
+		std::string _tableName;
+		std::string _whereExpression;
+		std::string _orderExpression;
+		std::string _havingExpression;
+	public:
+		/*
+		callback function which will be called after select execution
+		*/
+		momo::sqlite3_callback callback;
+
+		/*
+		callback arg for callback function (see callback class member)
+		*/
+		momo::callback_arg callbackArg;
+
+		/*
+		initialize SQLBuilder with table name
+		by default, instance will select * from database
+		*/
+		SQLBuilder(std::string tableName);
+		/*
+		initalize SQLBuilder with table name and columns
+		to select all columns (*), use SQLBuilder(tableName) constructor
+		to set alias for columns, use addColumn(columnName, alias) method
+		*/
+		SQLBuilder(std::string tableName, std::string columns);
+
+		/*
+		adds column to select statement
+		for alias use addColumn(columnName, alias) instead
+		*/
+		SQLBuilder<OPERATION::SELECT>& addColumn(const std::string& columnName);
+
+		/*
+		adds column to select statement as alias provided
+		*/
+		SQLBuilder<OPERATION::SELECT>& addColumn(const std::string& columnName, const std::string& alias);
+
+	    /*
+		adds WHERE expression to the select statement. 
+		This method can be called multiple times and expressions will be concatenated with `AND`
+		example: sqlBuilder.where("ID < 1000").where("NAME = 'Alex'");
+		will produce: WHERE (ID < 1000) AND (NAME = 'Alex')
+		*/
+		SQLBuilder<OPERATION::SELECT>& where(const std::string& whereExpression);
+
+		/*
+		add ORDER BY expression to select statement. 
+		This method can be called multiple times to get multiple-row order
+		example: sqlBuilder.orderBy("NAME", ORDER::ASC).orderBy("AGE", ORDER::DESC);
+		will produce: ORDER BY NAME ASC, AGE DESC
+		*/
+		momo::SQLBuilder<momo::OPERATION::SELECT>& orderBy(const std::string& column, momo::ORDER order = ORDER::ASC);
+
+		/*
+		converts SQLBuilder object to SQL
+		can be passed to execute method of database: execute(sqlBuilder)
+		*/
+		operator std::string() const;
+	};
+
+	/*
+	SQLBuilder class for droping tables
+	*/
+	template<>
+	class SQLBuilder<OPERATION::DROP>
+	{
+		std::string _tableName;
+	public:
+		SQLBuilder(std::string tableName)
+			: _tableName(std::move(tableName))
+		{
+			
+		}
+	};
+
+	SQLite3& operator<<(SQLite3& database, const SQLBuilder<OPERATION::SELECT>& sql);
 
 	/*
 	template specialization for 1 argument

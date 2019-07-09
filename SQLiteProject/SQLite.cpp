@@ -8,7 +8,7 @@ bool momo::SQLite3::isThreadSafe()
 momo::SQLite3::SQLite3()
 	: _database(nullptr), _success(true), _isOpen(false)
 {
-
+	 
 }
 
 momo::SQLite3::SQLite3(sqlite3* database, const std::string& name)
@@ -55,11 +55,11 @@ bool momo::SQLite3::execute(const std::string& SQL)
 	return execute(SQL, nullptr, nullptr);
 }
 
-bool momo::SQLite3::execute(const std::string& SQL, SQLite3_callback function, void* callbackArg)
+bool momo::SQLite3::execute(const std::string& SQL, momo::sqlite3_callback function, momo::callback_arg arg)
 {
 	char* error;
-	_success = true; 
-	if (sqlite3_exec(_database, SQL.c_str(), function, callbackArg, &error))
+	_success = true;
+	if (sqlite3_exec(_database, SQL.c_str(), function, arg, &error))
 	{
 		_errorMessage = std::string(error);
 		_success = false;
@@ -87,51 +87,58 @@ momo::SQLite3::~SQLite3()
 	close();
 }
 
-const char* momo::SQLBuilder<momo::Operation::CREATE>::convertType(momo::Type type)
+const char* momo::SQLBuilder<momo::OPERATION::CREATE>::convertType(momo::TYPE type)
 {
 	switch (type)
 	{
-	case momo::INT:
+	case momo::TYPE::INT:
 		return "INT";
-	case momo::TEXT:
+	case momo::TYPE::TEXT:
 		return "TEXT";
-	case momo::NUMERIC:
+	case momo::TYPE::NUMERIC:
 		return "NUMERIC";
-	case momo::REAL:
+	case momo::TYPE::REAL:
 		return "REAL";
-	case momo::BLOB:
+	case momo::TYPE::BLOB:
 		return "BLOB";
 	}
 	return "TEXT";
 }
 
-momo::SQLBuilder<momo::Operation::CREATE>::SQLBuilder()
+momo::SQLBuilder<momo::OPERATION::CREATE>::SQLBuilder()
 	: tableName("UNNAMED")
 {
 
 }
 
-momo::SQLBuilder<momo::Operation::CREATE>::SQLBuilder(std::string tableName)
+momo::SQLBuilder<momo::OPERATION::CREATE>::SQLBuilder(std::string tableName)
 	: tableName(std::move(tableName))
 {
 
 }
 
-void momo::SQLBuilder<momo::Operation::CREATE>::addColumn(const std::string& name, Type type, bool isNull, bool isPrimaryKey)
+momo::SQLBuilder<momo::OPERATION::CREATE>& momo::SQLBuilder<momo::OPERATION::CREATE>::addColumn(const std::string& name, TYPE type, bool isNull, bool isPrimaryKey)
+{
+	addColumn(name, convertType(type), isNull, isPrimaryKey);
+	return *this;
+}
+
+momo::SQLBuilder<momo::OPERATION::CREATE>& momo::SQLBuilder<momo::OPERATION::CREATE>::addColumn(const std::string & name, const std::string & type, bool isNull, bool isPrimaryKey)
 {
 	const char* IsNULL = (isNull == NULL ? " NULL" : " NOT NULL");
 	const char* IsKEY = (isPrimaryKey == momo::PRIMARY_KEY ? " PRIMARY KEY" : "");
-	*this << (name + ' ' + convertType(type) + IsNULL + IsKEY);
+	*this << (name + ' ' + type + IsNULL + IsKEY);
+	return *this;
 }
 
-momo::SQLBuilder<momo::Operation::CREATE>& momo::SQLBuilder<momo::Operation::CREATE>::operator<<(std::string column)
+momo::SQLBuilder<momo::OPERATION::CREATE>& momo::SQLBuilder<momo::OPERATION::CREATE>::operator<<(std::string column)
 {
 	if(!_columns.empty()) _columns.back() += ',';
 	_columns.push_back(std::move(column));
 	return *this;
 }
 
-momo::SQLBuilder<momo::Operation::CREATE>::operator std::string() const
+momo::SQLBuilder<momo::OPERATION::CREATE>::operator std::string() const
 {
 	std::stringstream SQL;
 	SQL << "CREATE TABLE " << tableName << '(';
@@ -143,13 +150,13 @@ momo::SQLBuilder<momo::Operation::CREATE>::operator std::string() const
 	return SQL.str();
 }
 
-momo::SQLBuilder<momo::Operation::INSERT>::SQLBuilder(const std::string& tableName, const std::string& values)
+momo::SQLBuilder<momo::OPERATION::INSERT>::SQLBuilder(const std::string& tableName, const std::string& values)
 	: _insertionLine("INSERT INTO " + tableName + '(' + values + ')')
 {
 
 }
 
-momo::SQLBuilder<momo::Operation::INSERT>::operator std::string() const
+momo::SQLBuilder<momo::OPERATION::INSERT>::operator std::string() const
 {
 	std::stringstream SQL;
 	for (const auto& value : _values)
@@ -160,7 +167,65 @@ momo::SQLBuilder<momo::Operation::INSERT>::operator std::string() const
 	return SQL.str();
 }
 
-void momo::SQLBuilder<momo::Operation::INSERT>::addValues(std::string values)
+momo::SQLBuilder<momo::OPERATION::INSERT>& momo::SQLBuilder<momo::OPERATION::INSERT>::addValues(std::string values)
 {
 	_values.push_back("VALUES (" + values + ");");
+	return *this;
+}
+
+momo::SQLBuilder<momo::OPERATION::SELECT>::SQLBuilder(std::string tableName)
+	: _tableName(std::move(tableName)), _columns(), callback(nullptr), callbackArg(nullptr)
+{
+
+}
+
+momo::SQLBuilder<momo::OPERATION::SELECT>::SQLBuilder(std::string tableName, std::string columns)
+	: _tableName(std::move(tableName)), _columns(std::move(columns)), callback(nullptr), callbackArg(nullptr)
+{
+
+}
+
+momo::SQLBuilder<momo::OPERATION::SELECT>& momo::SQLBuilder<momo::OPERATION::SELECT>::addColumn(const std::string& columnName)
+{
+	if (!_columns.empty()) _columns += ',';
+	_columns += columnName;
+	return *this;
+}
+
+momo::SQLBuilder<momo::OPERATION::SELECT>& momo::SQLBuilder<momo::OPERATION::SELECT>::addColumn(const std::string& columnName, const std::string& alias)
+{
+	if (!_columns.empty()) _columns += ',';
+	_columns += columnName + " AS " + alias;
+	return *this;
+}
+
+momo::SQLBuilder<momo::OPERATION::SELECT>& momo::SQLBuilder<momo::OPERATION::SELECT>::where(const std::string& whereExpression)
+{
+	if (!_whereExpression.empty()) _whereExpression += "AND";
+	_whereExpression = '(' + whereExpression + ')';
+	return *this;
+}
+
+momo::SQLBuilder<momo::OPERATION::SELECT>& momo::SQLBuilder<momo::OPERATION::SELECT>::orderBy(const std::string& column, momo::ORDER order)
+{
+	if (!_orderExpression.empty()) _orderExpression += ',';
+	_orderExpression += column + (order == ORDER::ASC ? " ASC" : " DESC");
+	return *this;
+}
+
+momo::SQLBuilder<momo::OPERATION::SELECT>::operator std::string() const
+{
+	std::stringstream SQL;
+	SQL << "SELECT " << (_columns.empty() ? "*" : _columns);
+	SQL << " FROM " << _tableName;
+	if (!_whereExpression.empty()) SQL << " WHERE " << _whereExpression;
+	if (!_orderExpression.empty()) SQL << " ORDER BY " << _orderExpression;
+	SQL << ';';
+	return SQL.str();
+}
+
+momo::SQLite3& momo::operator<<(SQLite3& database, const SQLBuilder<OPERATION::SELECT>& sql)
+{
+	database.execute(sql, sql.callback, sql.callbackArg);
+	return database;
 }
