@@ -1,2 +1,9 @@
 # SQLiteWrapper
-c++ wrapper of SQLite
+c++ wrapper for SQLite
+Currently supporting:
+- CREATE
+- INSERT
+- SELECT
+- ALTER
+- DELETE
+- DROP
